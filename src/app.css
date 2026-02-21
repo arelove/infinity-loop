@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&display=swap');
+
+:root {
+  font-family: Inter, sans-serif;
+}
+
+body {
+  @apply bg-background text-white;
+  overflow: hidden;
+}
+
+/* ── Animations ── */
+@keyframes gradient-xy {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50%       { opacity: 0.6; transform: scale(1.05); }
+}
+@keyframes spin-slow    { to { transform: rotate(360deg); } }
+@keyframes reverse-spin { to { transform: rotate(-360deg); } }
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-10px); }
+}
+
+.animate-gradient-xy  { animation: gradient-xy 15s ease infinite; background-size: 400% 400%; }
+.animate-pulse-glow   { animation: pulse-glow 3s ease-in-out infinite; }
+.animate-spin-slow    { animation: spin-slow 8s linear infinite; }
+.animate-reverse-spin { animation: reverse-spin 12s linear infinite; }
+.animate-float        { animation: float 6s ease-in-out infinite; }
+
+/* ── 3-D card helpers ── */
+.perspective-1000  { perspective: 1000px; }
+.preserve-3d       { transform-style: preserve-3d; }
+.backface-hidden   { backface-visibility: hidden; }
+.rotate-y-180      { transform: rotateY(180deg); }
+
+/* ── Custom scrollbar ── */
+.custom-scrollbar::-webkit-scrollbar       { width: 6px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: #1a1a1a; }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #444; }
+
+/* ── Prose overrides ── */
+.prose-dark h4 { color: #fff; font-size: 1.05em; margin: 1.2em 0 0.4em; }
+.prose-dark p  { color: #d1d5db; line-height: 1.65; margin: 0.4em 0 0.9em; }
+.prose-dark ul { color: #d1d5db; list-style: disc; padding-left: 1.2em; }
+.prose-dark a  { color: #90caf9; text-decoration: underline; }
+.prose-dark strong { color: #fff; }
+.prose-dark code { background: #2d2d2d; padding: 0.1em 0.3em; border-radius: 3px; font-size: 0.85em; }
+
+/* ── SvelteFlow dark theme ── */
+.svelte-flow__controls button {
+  background-color: #111 !important;
+  color: rgba(255,255,255,.8) !important;
+  border: 1px solid #333 !important;
+  border-radius: 4px !important;
+  transition: all .2s;
+}
+.svelte-flow__controls button:hover { background-color: #222 !important; }
+.svelte-flow__minimap              { background-color: #111 !important; border: 1px solid #333 !important; border-radius: 4px !important; }
+.svelte-flow__minimap-mask         { fill: rgba(0,0,0,.7) !important; }
+.svelte-flow__edge-path            { stroke: rgba(255,255,255,.3) !important; }

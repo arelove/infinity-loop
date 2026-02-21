@@ -1,0 +1,55 @@
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║                        Infinity Loop — Cargo.toml                            ║
+# ║   Rust backend for the Tauri 2 desktop shell.                              ║
+# ║   Handles: HTTP requests, session persistence, API key management.         ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+
+[package]
+name        = "rust-hole"
+version     = "1.0.0"
+description = "Infinity Loop — AI knowledge explorer"
+authors     = ["Ar3love"]
+edition     = "2021"   # Rust 2021 edition — modern, recommended default
+
+# ── Library target ────────────────────────────────────────────────────────────
+# Tauri requires all three crate types so the same code can be used
+# as a dynamic lib (cdylib) on mobile, a static lib (staticlib) for
+# linking, and a regular Rust lib (rlib) for tests.
+[lib]
+name       = "rust_hole_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+# ── Build-time dependencies ───────────────────────────────────────────────────
+# tauri-build generates the resource embedding glue at compile time.
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+# ── Runtime dependencies ──────────────────────────────────────────────────────
+[dependencies]
+
+# Core Tauri runtime — desktop window, IPC bridge, plugin system
+tauri = { version = "2", features = [] }
+
+# Tauri plugin: open URLs / files in the default system app
+tauri-plugin-opener = "2"
+
+# Serialization — used for IPC types and JSON session files
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async HTTP client — communicates with Tavily & Gemini APIs
+# The "json" feature enables .json() body helpers
+reqwest = { version = "0.12", features = ["json"] }
+
+# Async runtime — "full" enables all features (io, time, sync, macros…)
+# Required by both Tauri and reqwest
+tokio = { version = "1", features = ["full"] }
+
+# ── Release profile ───────────────────────────────────────────────────────────
+# Applied when running `cargo build --release` or `npm run tauri build`.
+[profile.release]
+opt-level     = 3       # Maximum speed optimisation
+lto           = true    # Link-Time Optimisation — merges crates for better inlining
+codegen-units = 1       # Single codegen unit — slower compile, smaller & faster binary
+strip         = true    # Strip debug symbols from the binary (reduces size ~30-50%)
+panic         = "abort" # On panic — abort immediately instead of stack unwind (smaller binary)
