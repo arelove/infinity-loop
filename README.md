@@ -7,7 +7,7 @@
 <!-- ║  e.g. hero.gif — screen recording of the     ║ -->
 <!-- ║  graph being built, or logo.png with ∞ sign  ║ -->
 <!-- ╚══════════════════════════════════════════════╝ -->
-<img src="docs/logo.gif" alt="Infinity Loop logo" width="800" />
+<img src="docs/logo.gif" alt="Infinity Loop logo" width="256" />
 
 # ∞ Infinity Loop
 
