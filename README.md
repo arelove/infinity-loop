@@ -2,8 +2,8 @@
 
 <div align="center">
 
-<!-- ╚══════════════════════════════════════════════╝ -->
-<img src="docs/logo.png" alt="Infinity Loop logo" width="256" />
+
+<img src="docs/icon.png" alt="Infinity Loop logo" width="256" />
 
 # ∞ Infinity Loop
 
@@ -48,8 +48,15 @@ There are two modes:
 ## 🖼 Screenshots
 
 <div align="center">
-  <img src="docs/screenshot-dev.png"     alt="Dev mode"        width="49%" />
-  <img src="docs/screenshot-gallery.png" alt="Session gallery" width="49%" />
+  <img src="docs/screenshot-seek.png" alt="Seek mode — landing" width="100%" />
+  <sub><i>Seek mode — enter any topic to start exploring</i></sub>
+</div>
+
+<br/>
+
+<div align="center">
+  <img src="docs/screenshot-dev.png" alt="Dev mode — codebase explorer" width="100%" />
+  <sub><i>Dev mode — load a codebase and explore its architecture</i></sub>
 </div>
 
 ---
@@ -95,6 +102,11 @@ The app uses two external services:
 **Google Gemini** — language model for graph generation  
 → Get your key at [Google AI Studio](https://aistudio.google.com/app/apikey) (free)
 
+<!-- ╔══════════════════════════════════════════════════════════════════════╗ -->
+<!-- ║  INSERT HERE: docs/screenshot-seek-graph.png                        ║ -->
+<!-- ║  Full-width screenshot of Seek mode with a fully built AI graph     ║ -->
+<!-- ║  Ideally: a beautiful topic with many nodes and connections visible  ║ -->
+<!-- ╚══════════════════════════════════════════════════════════════════════╝ -->
 
 <div align="center">
   <img src="docs/screenshot-seek-graph.png" alt="Seek mode — AI knowledge graph in action" width="100%" />
@@ -203,3 +215,8 @@ Inspired by <a href="https://rabbitholes.ai">RabbitHoles AI</a> — for the idea
 <br/><br/>
 <a href="#top">↑ Back to top</a>
 </div>
+
+<!-- ╔══════════════════════════════════════════════════════╗ -->
+<!-- ║  OPTIONAL: add a link to a video demo               ║ -->
+<!-- ║  [![Demo](docs/video-thumb.png)](your-video-url)    ║ -->
+<!-- ╚══════════════════════════════════════════════════════╝ -->
