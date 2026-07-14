@@ -24,11 +24,12 @@
   // Which provider's boolean flag applies.
   function keyFlagFor(cfg: ConfigView, p: ProviderId): boolean {
     switch (p) {
-      case 'gemini': return cfg.has_gemini;
-      case 'openai': return cfg.has_openai;
-      case 'xai':    return cfg.has_xai;
-      case 'nvidia': return cfg.has_nvidia;
-      case 'ollama': return true;
+      case 'gemini':    return cfg.has_gemini;
+      case 'openai':    return cfg.has_openai;
+      case 'anthropic': return cfg.has_anthropic;
+      case 'xai':       return cfg.has_xai;
+      case 'nvidia':    return cfg.has_nvidia;
+      case 'ollama':    return true;
     }
   }
 

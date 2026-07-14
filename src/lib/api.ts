@@ -4,7 +4,7 @@ import { translate } from './i18n';
 
 // ── Providers ─────────────────────────────────────────────────────────────────
 
-export type ProviderId = 'gemini' | 'openai' | 'xai' | 'nvidia' | 'ollama';
+export type ProviderId = 'gemini' | 'openai' | 'anthropic' | 'xai' | 'nvidia' | 'ollama';
 
 /** Config as exposed to the frontend — raw keys never leave Rust. */
 export interface ConfigView {
@@ -14,6 +14,7 @@ export interface ConfigView {
   has_tavily: boolean;
   has_gemini: boolean;
   has_openai: boolean;
+  has_anthropic: boolean;
   has_xai: boolean;
   has_nvidia: boolean;
 }
@@ -26,6 +27,7 @@ export interface ConfigUpdate {
   tavily_key?: string;
   gemini_key?: string;
   openai_key?: string;
+  anthropic_key?: string;
   xai_key?: string;
   nvidia_key?: string;
 }
@@ -39,21 +41,45 @@ export const PROVIDERS: Record<
     label: 'Google Gemini',
     keyField: 'gemini_key',
     defaultModel: 'gemini-2.5-flash',
-    models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
+    models: [
+      'gemini-2.5-flash',
+      'gemini-2.5-flash-lite',
+      'gemini-2.5-pro',
+      'gemini-2.0-flash',
+    ],
     keysUrl: 'https://aistudio.google.com/apikey',
   },
   openai: {
     label: 'OpenAI (ChatGPT)',
     keyField: 'openai_key',
     defaultModel: 'gpt-4o-mini',
-    models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'o4-mini'],
+    models: [
+      'gpt-4o-mini',
+      'gpt-4o',
+      'gpt-4.1',
+      'gpt-4.1-mini',
+      'o4-mini',
+      'o3-mini',
+    ],
     keysUrl: 'https://platform.openai.com/api-keys',
+  },
+  anthropic: {
+    label: 'Anthropic (Claude)',
+    keyField: 'anthropic_key',
+    defaultModel: 'claude-opus-4-8',
+    models: [
+      'claude-opus-4-8',
+      'claude-sonnet-5',
+      'claude-haiku-4-5',
+      'claude-fable-5',
+    ],
+    keysUrl: 'https://console.anthropic.com/settings/keys',
   },
   xai: {
     label: 'xAI (Grok)',
     keyField: 'xai_key',
     defaultModel: 'grok-2-latest',
-    models: ['grok-2-latest', 'grok-2-vision-latest', 'grok-beta'],
+    models: ['grok-4', 'grok-3', 'grok-2-latest', 'grok-2-vision-latest'],
     keysUrl: 'https://console.x.ai',
   },
   nvidia: {
@@ -65,6 +91,7 @@ export const PROVIDERS: Record<
       'meta/llama-3.1-405b-instruct',
       'nvidia/llama-3.1-nemotron-70b-instruct',
       'deepseek-ai/deepseek-r1',
+      'qwen/qwen2.5-coder-32b-instruct',
     ],
     keysUrl: 'https://build.nvidia.com',
   },
@@ -72,7 +99,7 @@ export const PROVIDERS: Record<
     label: 'Local (Ollama)',
     keyField: null, // no key — local server
     defaultModel: 'llama3.1',
-    models: ['llama3.1', 'qwen2.5', 'mistral', 'phi3'],
+    models: ['llama3.1', 'llama3.2', 'qwen2.5', 'mistral', 'gemma2', 'phi3'],
   },
 };
 
@@ -87,12 +114,13 @@ export async function setConfig(update: ConfigUpdate): Promise<void> {
 /** True when the active provider has everything it needs to run. */
 export function providerReady(cfg: ConfigView): boolean {
   switch (cfg.provider) {
-    case 'gemini':  return cfg.has_gemini;
-    case 'openai':  return cfg.has_openai;
-    case 'xai':     return cfg.has_xai;
-    case 'nvidia':  return cfg.has_nvidia;
-    case 'ollama':  return true; // local server, no key required
-    default:        return false;
+    case 'gemini':    return cfg.has_gemini;
+    case 'openai':    return cfg.has_openai;
+    case 'anthropic': return cfg.has_anthropic;
+    case 'xai':       return cfg.has_xai;
+    case 'nvidia':    return cfg.has_nvidia;
+    case 'ollama':    return true; // local server, no key required
+    default:          return false;
   }
 }
 

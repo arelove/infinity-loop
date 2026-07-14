@@ -71,6 +71,8 @@ struct Config {
     xai_key: String,
     #[serde(default)]
     nvidia_key: String,
+    #[serde(default)]
+    anthropic_key: String,
 }
 
 impl Config {
@@ -106,6 +108,7 @@ fn default_model(provider: &str) -> &'static str {
         "xai" => "grok-2-latest",
         "nvidia" => "meta/llama-3.3-70b-instruct",
         "ollama" => "llama3.1",
+        "anthropic" => "claude-opus-4-8",
         _ => "gemini-2.5-flash",
     }
 }
@@ -121,6 +124,7 @@ struct ConfigView {
     has_openai: bool,
     has_xai: bool,
     has_nvidia: bool,
+    has_anthropic: bool,
 }
 
 /// Partial update coming from the frontend. Absent / empty key fields are
@@ -135,6 +139,7 @@ struct ConfigUpdate {
     openai_key: Option<String>,
     xai_key: Option<String>,
     nvidia_key: Option<String>,
+    anthropic_key: Option<String>,
 }
 
 // ─── App state ────────────────────────────────────────────────────────────────
@@ -185,6 +190,7 @@ fn load_config(app: &tauri::AppHandle) -> Config {
         openai_key: std::env::var("OPENAI_API_KEY").unwrap_or_default(),
         xai_key: std::env::var("XAI_API_KEY").unwrap_or_default(),
         nvidia_key: std::env::var("NVIDIA_API_KEY").unwrap_or_default(),
+        anthropic_key: std::env::var("ANTHROPIC_API_KEY").unwrap_or_default(),
     }
 }
 
@@ -216,6 +222,7 @@ async fn get_config(app: tauri::AppHandle) -> Result<ConfigView, String> {
         has_openai: !cfg.openai_key.is_empty(),
         has_xai: !cfg.xai_key.is_empty(),
         has_nvidia: !cfg.nvidia_key.is_empty(),
+        has_anthropic: !cfg.anthropic_key.is_empty(),
     })
 }
 
@@ -260,6 +267,11 @@ async fn set_config(update: ConfigUpdate, app: tauri::AppHandle) -> Result<(), S
                 cfg.nvidia_key = v;
             }
         }
+        if let Some(v) = update.anthropic_key {
+            if !v.is_empty() {
+                cfg.anthropic_key = v;
+            }
+        }
         cfg.clone()
     };
     persist_config(&app, &snapshot)
@@ -267,16 +279,25 @@ async fn set_config(update: ConfigUpdate, app: tauri::AppHandle) -> Result<(), S
 
 // ─── LLM provider dispatch ─────────────────────────────────────────────────────
 
+/// Wire protocol / request-response shape a provider speaks.
+#[derive(PartialEq, Clone, Copy)]
+enum ApiKind {
+    /// OpenAI-compatible /chat/completions (OpenAI, xAI, NVIDIA, Ollama).
+    OpenAi,
+    /// Google Gemini generateContent / streamGenerateContent.
+    Gemini,
+    /// Anthropic Messages API.
+    Anthropic,
+}
+
 /// Resolved endpoint details for the active provider.
 struct Endpoint {
-    /// True for Google Gemini (different request/response shape).
-    is_gemini: bool,
-    /// Full URL for OpenAI-compatible providers; base "…/models" for Gemini.
+    kind: ApiKind,
+    /// Full URL for OpenAI-compatible / Anthropic; base "…/models" for Gemini.
     url: String,
-    /// Bearer key for OpenAI-compatible providers (empty for local Ollama).
+    /// Auth key: bearer for OpenAI-compatible (empty for Ollama), x-api-key for
+    /// Anthropic, or query param for Gemini.
     api_key: String,
-    /// Gemini API key (query param) — only used when `is_gemini`.
-    gemini_key: String,
     model: String,
 }
 
@@ -291,10 +312,9 @@ fn resolve_endpoint(cfg: &Config) -> Result<Endpoint, String> {
                 return Err("Gemini API key is not set. Open ⚙ Settings to add it.".into());
             }
             Ok(Endpoint {
-                is_gemini: true,
+                kind: ApiKind::Gemini,
                 url: "https://generativelanguage.googleapis.com/v1beta/models".into(),
-                api_key: String::new(),
-                gemini_key: cfg.gemini_key.clone(),
+                api_key: cfg.gemini_key.clone(),
                 model,
             })
         }
@@ -303,10 +323,9 @@ fn resolve_endpoint(cfg: &Config) -> Result<Endpoint, String> {
                 return Err("OpenAI API key is not set. Open ⚙ Settings to add it.".into());
             }
             Ok(Endpoint {
-                is_gemini: false,
+                kind: ApiKind::OpenAi,
                 url: "https://api.openai.com/v1/chat/completions".into(),
                 api_key: cfg.openai_key.clone(),
-                gemini_key: String::new(),
                 model,
             })
         }
@@ -315,10 +334,9 @@ fn resolve_endpoint(cfg: &Config) -> Result<Endpoint, String> {
                 return Err("xAI (Grok) API key is not set. Open ⚙ Settings to add it.".into());
             }
             Ok(Endpoint {
-                is_gemini: false,
+                kind: ApiKind::OpenAi,
                 url: "https://api.x.ai/v1/chat/completions".into(),
                 api_key: cfg.xai_key.clone(),
-                gemini_key: String::new(),
                 model,
             })
         }
@@ -327,18 +345,29 @@ fn resolve_endpoint(cfg: &Config) -> Result<Endpoint, String> {
                 return Err("NVIDIA API key is not set. Open ⚙ Settings to add it.".into());
             }
             Ok(Endpoint {
-                is_gemini: false,
+                kind: ApiKind::OpenAi,
                 url: "https://integrate.api.nvidia.com/v1/chat/completions".into(),
                 api_key: cfg.nvidia_key.clone(),
-                gemini_key: String::new(),
+                model,
+            })
+        }
+        "anthropic" => {
+            if cfg.anthropic_key.is_empty() {
+                return Err(
+                    "Anthropic (Claude) API key is not set. Open ⚙ Settings to add it.".into(),
+                );
+            }
+            Ok(Endpoint {
+                kind: ApiKind::Anthropic,
+                url: "https://api.anthropic.com/v1/messages".into(),
+                api_key: cfg.anthropic_key.clone(),
                 model,
             })
         }
         "ollama" => Ok(Endpoint {
-            is_gemini: false,
+            kind: ApiKind::OpenAi,
             url: format!("{}/v1/chat/completions", cfg.ollama_url()),
             api_key: String::new(), // local server, no auth
-            gemini_key: String::new(),
             model,
         }),
         other => Err(format!("Unknown provider: {}", other)),
@@ -397,16 +426,61 @@ fn gemini_body(req: &LlmRequest) -> Value {
     body
 }
 
+/// Build the JSON body for an Anthropic Messages API call.
+///
+/// Note: `temperature` is intentionally omitted — the current Claude models
+/// (Opus 4.8, Sonnet 5, Fable 5) reject it with a 400.
+fn anthropic_body(ep: &Endpoint, req: &LlmRequest, stream: bool) -> Value {
+    let mut body = serde_json::json!({
+        "model": ep.model,
+        "max_tokens": req.max_tokens,
+        "messages": [{ "role": "user", "content": req.user }],
+        "stream": stream,
+    });
+    if let Some(sys) = &req.system {
+        if !sys.is_empty() {
+            body["system"] = Value::String(sys.clone());
+        }
+    }
+    body
+}
+
 /// Extract a text delta from one SSE `data:` payload for the active provider.
-fn extract_delta(json: &Value, is_gemini: bool) -> Option<String> {
-    if is_gemini {
-        json["candidates"][0]["content"]["parts"][0]["text"]
+fn extract_delta(json: &Value, kind: ApiKind) -> Option<String> {
+    match kind {
+        ApiKind::Gemini => json["candidates"][0]["content"]["parts"][0]["text"]
             .as_str()
-            .map(|s| s.to_string())
-    } else {
-        json["choices"][0]["delta"]["content"]
+            .map(|s| s.to_string()),
+        ApiKind::OpenAi => json["choices"][0]["delta"]["content"]
             .as_str()
-            .map(|s| s.to_string())
+            .map(|s| s.to_string()),
+        // Anthropic SSE: {"type":"content_block_delta","delta":{"type":"text_delta","text":"…"}}
+        ApiKind::Anthropic => {
+            if json["type"] == "content_block_delta" && json["delta"]["type"] == "text_delta" {
+                json["delta"]["text"].as_str().map(|s| s.to_string())
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// Attach provider-appropriate auth headers to a request builder.
+fn auth_headers(builder: reqwest::RequestBuilder, ep: &Endpoint) -> reqwest::RequestBuilder {
+    match ep.kind {
+        // Gemini carries the key as a query param; nothing to add here.
+        ApiKind::Gemini => builder,
+        ApiKind::Anthropic => builder
+            .header("x-api-key", &ep.api_key)
+            .header("anthropic-version", "2023-06-01"),
+        // OpenAI-compatible: bearer token, except local Ollama (no key).
+        ApiKind::OpenAi => {
+            if ep.api_key.is_empty() {
+                builder
+            } else {
+                builder.bearer_auth(&ep.api_key)
+            }
+        }
     }
 }
 
@@ -419,22 +493,19 @@ async fn stream_completion(
     on_chunk: &Channel<String>,
     cancel: Arc<AtomicBool>,
 ) -> Result<String, String> {
-    let (url, body) = if ep.is_gemini {
-        (
+    let (url, body) = match ep.kind {
+        ApiKind::Gemini => (
             format!(
                 "{}/{}:streamGenerateContent?alt=sse&key={}",
-                ep.url, ep.model, ep.gemini_key
+                ep.url, ep.model, ep.api_key
             ),
             gemini_body(req),
-        )
-    } else {
-        (ep.url.clone(), openai_body(ep, req, true))
+        ),
+        ApiKind::OpenAi => (ep.url.clone(), openai_body(ep, req, true)),
+        ApiKind::Anthropic => (ep.url.clone(), anthropic_body(ep, req, true)),
     };
 
-    let mut builder = client.post(&url).json(&body);
-    if !ep.api_key.is_empty() {
-        builder = builder.bearer_auth(&ep.api_key);
-    }
+    let builder = auth_headers(client.post(&url).json(&body), ep);
 
     let resp = builder
         .send()
@@ -444,7 +515,11 @@ async fn stream_completion(
     let status = resp.status();
     if !status.is_success() {
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!("LLM HTTP {}: {}", status, &text[..text.len().min(300)]));
+        return Err(format!(
+            "LLM HTTP {}: {}",
+            status,
+            &text[..text.len().min(300)]
+        ));
     }
 
     let mut stream = resp.bytes_stream();
@@ -470,7 +545,7 @@ async fn stream_completion(
                 continue;
             }
             if let Ok(json) = serde_json::from_str::<Value>(payload) {
-                if let Some(delta) = extract_delta(&json, ep.is_gemini) {
+                if let Some(delta) = extract_delta(&json, ep.kind) {
                     if !delta.is_empty() {
                         full.push_str(&delta);
                         let _ = on_chunk.send(delta);
@@ -492,19 +567,16 @@ async fn complete_once(
     ep: &Endpoint,
     req: &LlmRequest,
 ) -> Result<String, String> {
-    let (url, body) = if ep.is_gemini {
-        (
-            format!("{}/{}:generateContent?key={}", ep.url, ep.model, ep.gemini_key),
+    let (url, body) = match ep.kind {
+        ApiKind::Gemini => (
+            format!("{}/{}:generateContent?key={}", ep.url, ep.model, ep.api_key),
             gemini_body(req),
-        )
-    } else {
-        (ep.url.clone(), openai_body(ep, req, false))
+        ),
+        ApiKind::OpenAi => (ep.url.clone(), openai_body(ep, req, false)),
+        ApiKind::Anthropic => (ep.url.clone(), anthropic_body(ep, req, false)),
     };
 
-    let mut builder = client.post(&url).json(&body);
-    if !ep.api_key.is_empty() {
-        builder = builder.bearer_auth(&ep.api_key);
-    }
+    let builder = auth_headers(client.post(&url).json(&body), ep);
 
     let resp = builder
         .send()
@@ -513,14 +585,19 @@ async fn complete_once(
     let status = resp.status();
     let text = resp.text().await.map_err(|e| format!("Read body: {}", e))?;
     if !status.is_success() {
-        return Err(format!("LLM HTTP {}: {}", status, &text[..text.len().min(300)]));
+        return Err(format!(
+            "LLM HTTP {}: {}",
+            status,
+            &text[..text.len().min(300)]
+        ));
     }
 
     let json: Value = serde_json::from_str(&text).map_err(|e| format!("Parse error: {}", e))?;
-    let out = if ep.is_gemini {
-        json["candidates"][0]["content"]["parts"][0]["text"].as_str()
-    } else {
-        json["choices"][0]["message"]["content"].as_str()
+    let out = match ep.kind {
+        ApiKind::Gemini => json["candidates"][0]["content"]["parts"][0]["text"].as_str(),
+        ApiKind::OpenAi => json["choices"][0]["message"]["content"].as_str(),
+        // Anthropic returns content as an array of blocks; take the first text block.
+        ApiKind::Anthropic => json["content"][0]["text"].as_str(),
     };
     Ok(out.unwrap_or("").to_string())
 }
@@ -618,7 +695,11 @@ async fn gemini_analyze_pdf(
     let status = resp.status();
     let text = resp.text().await.map_err(|e| format!("Read body: {}", e))?;
     if !status.is_success() {
-        return Err(format!("Gemini HTTP {}: {}", status, &text[..text.len().min(300)]));
+        return Err(format!(
+            "Gemini HTTP {}: {}",
+            status,
+            &text[..text.len().min(300)]
+        ));
     }
     let json: Value = serde_json::from_str(&text).map_err(|e| format!("Parse error: {}", e))?;
     Ok(json["candidates"][0]["content"]["parts"][0]["text"]
@@ -713,7 +794,8 @@ async fn tavily_search(query: String, app: tauri::AppHandle) -> Result<TavilySea
     #[cfg(debug_assertions)]
     eprintln!("[Tavily] {}", &raw[..raw.len().min(300)]);
 
-    let json: Value = serde_json::from_str(&raw).map_err(|e| format!("Tavily parse error: {}", e))?;
+    let json: Value =
+        serde_json::from_str(&raw).map_err(|e| format!("Tavily parse error: {}", e))?;
 
     let empty = vec![];
     let results = json["results"].as_array().unwrap_or(&empty);
@@ -789,7 +871,11 @@ async fn call_tavily_raw(
     let status = resp.status();
     let text = resp.text().await.map_err(|e| format!("Read body: {}", e))?;
     if !status.is_success() {
-        return Err(format!("Tavily HTTP {}: {}", status, &text[..text.len().min(300)]));
+        return Err(format!(
+            "Tavily HTTP {}: {}",
+            status,
+            &text[..text.len().min(300)]
+        ));
     }
     Ok(text)
 }
@@ -827,4 +913,150 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+// Pure logic only — no network, no Tauri runtime. Run with `cargo test`.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg_with(provider: &str, key_field: &str, model: &str) -> Config {
+        let mut c = Config {
+            provider: provider.to_string(),
+            model: model.to_string(),
+            ..Default::default()
+        };
+        match key_field {
+            "gemini" => c.gemini_key = "k".into(),
+            "openai" => c.openai_key = "k".into(),
+            "xai" => c.xai_key = "k".into(),
+            "nvidia" => c.nvidia_key = "k".into(),
+            "anthropic" => c.anthropic_key = "k".into(),
+            _ => {}
+        }
+        c
+    }
+
+    #[test]
+    fn default_models_per_provider() {
+        assert_eq!(default_model("gemini"), "gemini-2.5-flash");
+        assert_eq!(default_model("openai"), "gpt-4o-mini");
+        assert_eq!(default_model("xai"), "grok-2-latest");
+        assert_eq!(default_model("nvidia"), "meta/llama-3.3-70b-instruct");
+        assert_eq!(default_model("ollama"), "llama3.1");
+        assert_eq!(default_model("anthropic"), "claude-opus-4-8");
+        assert_eq!(default_model("unknown"), "gemini-2.5-flash");
+    }
+
+    #[test]
+    fn config_defaults() {
+        let c = Config::default();
+        assert_eq!(c.provider_or_default(), "gemini");
+        assert_eq!(c.model_or_default(), "gemini-2.5-flash");
+        assert_eq!(c.ollama_url(), "http://localhost:11434");
+
+        let mut c2 = Config::default();
+        c2.ollama_base_url = "http://host:1234/".into();
+        assert_eq!(c2.ollama_url(), "http://host:1234"); // trailing slash trimmed
+    }
+
+    #[test]
+    fn resolve_endpoint_picks_right_kind_and_url() {
+        let e = resolve_endpoint(&cfg_with("openai", "openai", "")).unwrap();
+        assert!(matches!(e.kind, ApiKind::OpenAi));
+        assert_eq!(e.url, "https://api.openai.com/v1/chat/completions");
+        assert_eq!(e.model, "gpt-4o-mini"); // empty model → default
+
+        let e = resolve_endpoint(&cfg_with("anthropic", "anthropic", "claude-sonnet-5")).unwrap();
+        assert!(matches!(e.kind, ApiKind::Anthropic));
+        assert_eq!(e.url, "https://api.anthropic.com/v1/messages");
+        assert_eq!(e.model, "claude-sonnet-5"); // explicit model kept
+
+        let e = resolve_endpoint(&cfg_with("gemini", "gemini", "")).unwrap();
+        assert!(matches!(e.kind, ApiKind::Gemini));
+
+        // Ollama needs no key.
+        let e = resolve_endpoint(&cfg_with("ollama", "", "")).unwrap();
+        assert!(matches!(e.kind, ApiKind::OpenAi));
+        assert!(e.api_key.is_empty());
+        assert!(e.url.contains("/v1/chat/completions"));
+    }
+
+    #[test]
+    fn resolve_endpoint_errors_when_key_missing() {
+        // provider set but no key stored
+        assert!(resolve_endpoint(&cfg_with("openai", "", "")).is_err());
+        assert!(resolve_endpoint(&cfg_with("anthropic", "", "")).is_err());
+        assert!(resolve_endpoint(&cfg_with("nope", "", "")).is_err());
+    }
+
+    fn ep(kind: ApiKind) -> Endpoint {
+        Endpoint {
+            kind,
+            url: "u".into(),
+            api_key: "k".into(),
+            model: "m".into(),
+        }
+    }
+
+    fn req() -> LlmRequest {
+        LlmRequest {
+            system: Some("sys".into()),
+            user: "hi".into(),
+            temperature: 0.5,
+            max_tokens: 42,
+        }
+    }
+
+    #[test]
+    fn openai_body_shape() {
+        let b = openai_body(&ep(ApiKind::OpenAi), &req(), true);
+        assert_eq!(b["model"], "m");
+        assert_eq!(b["stream"], true);
+        assert_eq!(b["max_tokens"], 42);
+        assert_eq!(b["messages"][0]["role"], "system");
+        assert_eq!(b["messages"][1]["content"], "hi");
+    }
+
+    #[test]
+    fn anthropic_body_omits_temperature_and_lifts_system() {
+        let b = anthropic_body(&ep(ApiKind::Anthropic), &req(), false);
+        assert_eq!(b["model"], "m");
+        assert_eq!(b["max_tokens"], 42);
+        assert_eq!(b["system"], "sys"); // system is top-level, not a message
+        assert_eq!(b["messages"][0]["content"], "hi");
+        assert!(b.get("temperature").is_none()); // rejected by modern Claude models
+    }
+
+    #[test]
+    fn gemini_body_shape() {
+        let b = gemini_body(&req());
+        assert_eq!(b["generationConfig"]["maxOutputTokens"], 42);
+        assert_eq!(b["contents"][0]["parts"][0]["text"], "hi");
+        assert_eq!(b["systemInstruction"]["parts"][0]["text"], "sys");
+    }
+
+    #[test]
+    fn extract_delta_per_provider() {
+        let g = serde_json::json!({"candidates":[{"content":{"parts":[{"text":"G"}]}}]});
+        assert_eq!(extract_delta(&g, ApiKind::Gemini).as_deref(), Some("G"));
+
+        let o = serde_json::json!({"choices":[{"delta":{"content":"O"}}]});
+        assert_eq!(extract_delta(&o, ApiKind::OpenAi).as_deref(), Some("O"));
+
+        let a = serde_json::json!({"type":"content_block_delta","delta":{"type":"text_delta","text":"A"}});
+        assert_eq!(extract_delta(&a, ApiKind::Anthropic).as_deref(), Some("A"));
+
+        // Anthropic non-text events yield nothing.
+        let ping = serde_json::json!({"type":"ping"});
+        assert_eq!(extract_delta(&ping, ApiKind::Anthropic), None);
+    }
+
+    #[test]
+    fn sanitize_id_strips_path_chars() {
+        assert_eq!(sanitize_id("../../etc/passwd"), "etcpasswd");
+        assert_eq!(sanitize_id("abc-123_XY"), "abc-123_XY");
+    }
 }
