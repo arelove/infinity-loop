@@ -50,8 +50,8 @@
 
 <style>
   .scene {
-    width: 100vw;
-    height: 100vh;
+    width: 100%;
+    height: 100%;
     perspective: 1800px;
     background: #1a1a1a;
   }
