@@ -166,21 +166,6 @@ Bundles are written under `src-tauri/target/release/bundle/`:
 On Windows the NSIS installer works on both Windows 10 and 11. If WebView2 is
 not already present, the installer downloads and installs it automatically.
 
-### Automated cross-platform releases
-
-Pushing a version tag builds installers for all platforms and attaches them to a
-draft GitHub Release via the `.github/workflows/release.yml` workflow:
-
-```bash
-# bump the version in package.json, src-tauri/Cargo.toml and
-# src-tauri/tauri.conf.json, add a CHANGELOG entry, then:
-git tag v1.1.0
-git push origin v1.1.0
-```
-
-Review the resulting draft release, then publish it. Release notes live in
-[CHANGELOG.md](CHANGELOG.md).
-
 ### Continuous integration
 
 Every push and pull request runs `.github/workflows/ci.yml`: `svelte-check` for
