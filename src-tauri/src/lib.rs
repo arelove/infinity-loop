@@ -923,20 +923,24 @@ mod tests {
     use super::*;
 
     fn cfg_with(provider: &str, key_field: &str, model: &str) -> Config {
-        let mut c = Config {
+        let key = |f: &str| {
+            if f == key_field {
+                "k".to_string()
+            } else {
+                String::new()
+            }
+        };
+        Config {
             provider: provider.to_string(),
             model: model.to_string(),
-            ..Default::default()
-        };
-        match key_field {
-            "gemini" => c.gemini_key = "k".into(),
-            "openai" => c.openai_key = "k".into(),
-            "xai" => c.xai_key = "k".into(),
-            "nvidia" => c.nvidia_key = "k".into(),
-            "anthropic" => c.anthropic_key = "k".into(),
-            _ => {}
+            ollama_base_url: String::new(),
+            tavily_key: String::new(),
+            gemini_key: key("gemini"),
+            openai_key: key("openai"),
+            xai_key: key("xai"),
+            nvidia_key: key("nvidia"),
+            anthropic_key: key("anthropic"),
         }
-        c
     }
 
     #[test]
@@ -957,8 +961,10 @@ mod tests {
         assert_eq!(c.model_or_default(), "gemini-2.5-flash");
         assert_eq!(c.ollama_url(), "http://localhost:11434");
 
-        let mut c2 = Config::default();
-        c2.ollama_base_url = "http://host:1234/".into();
+        let c2 = Config {
+            ollama_base_url: "http://host:1234/".into(),
+            ..Config::default()
+        };
         assert_eq!(c2.ollama_url(), "http://host:1234"); // trailing slash trimmed
     }
 
