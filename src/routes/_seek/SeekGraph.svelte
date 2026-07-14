@@ -7,7 +7,7 @@
   import MainNode from '$lib/components/MainNode.svelte';
   import { t } from '$lib/i18n';
   import {
-    app, nodesStore, edgesStore, currentController,
+    app, nodesStore, edgesStore, cancelActiveRequest,
     resetToSearch, handleSaveGraph, handleExportPNG, handleNodeClick,
   } from '../_shared/appState.svelte';
 
@@ -49,7 +49,7 @@
 
     {#if app.isLoading}
       <button
-        onclick={() => { currentController?.abort(); app.isLoading = false; app.activeRequests = {}; }}
+        onclick={() => cancelActiveRequest()}
         class="flex items-center gap-1.5 px-3 py-2 rounded-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-xs text-red-400 transition-colors"
         title={$t('tooltip_cancel')}>
         {$t('graph_cancel')}

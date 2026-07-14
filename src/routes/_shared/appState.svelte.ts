@@ -243,6 +243,14 @@ export async function expandNode(node: Node) {
 
 // ── Reset ─────────────────────────────────────────────────────────────────────
 
+/** Cancel the in-flight request (stops the Rust stream) without leaving the graph. */
+export function cancelActiveRequest() {
+  if (currentRequestId) cancelStream(currentRequestId);
+  currentRequestId = null;
+  app.isLoading = false;
+  app.activeRequests = {};
+}
+
 export function resetToSearch() {
   if (currentRequestId) cancelStream(currentRequestId);
   currentRequestId = null;

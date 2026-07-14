@@ -9,7 +9,6 @@
     app,
     handleLoadSession, handleImportJSON,
     handleSaveGraph, handleExportPNG, resetToSearch,
-    currentController,
   } from './_shared/appState.svelte';
 
   // ── Global keyboard shortcuts ─────────────────────────────────────────────
