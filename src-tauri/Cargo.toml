@@ -28,7 +28,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 
 # Core Tauri runtime — desktop window, IPC bridge, plugin system
-tauri = { version = "2", features = [] }
+# "protocol-asset" — required because tauri.conf.json enables assetProtocol
+tauri = { version = "2", features = ["protocol-asset"] }
 
 # Tauri plugin: open URLs / files in the default system app
 tauri-plugin-opener = "2"
