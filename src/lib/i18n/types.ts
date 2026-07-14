@@ -49,6 +49,16 @@ export interface Translations {
   settings_get_gemini:     string;
   settings_high_graphics:      string;
   settings_high_graphics_hint: string;
+  // Provider selection
+  settings_provider_label:   string;
+  settings_provider_hint:    string;
+  settings_model_label:      string;
+  settings_model_hint:       string;
+  settings_apikey_label:     string;
+  settings_apikey_saved:     string;
+  settings_ollama_url_label: string;
+  settings_ollama_hint:      string;
+  settings_get_key:          string;
 
   // Gallery modal
   gallery_title:           string;
