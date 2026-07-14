@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   minimize / maximize / close controls. Native window decorations are disabled.
 - Cross-platform release builds. A tagged push (`v*`) triggers a GitHub Actions
   workflow that produces installers for Windows (NSIS), macOS (dmg, Apple
-  Silicon and Intel), and Linux (AppImage, deb).
+  Silicon and Intel), and Linux (AppImage, deb), and attaches them to a draft
+  GitHub Release whose body is filled from the matching section of this file.
 - Continuous integration workflow running `svelte-check`, `cargo fmt`,
   `cargo clippy`, and `cargo test` on every push and pull request.
 - Rust unit tests covering provider resolution, request-body construction, and

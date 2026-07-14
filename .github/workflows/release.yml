@@ -67,6 +67,20 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # Pull the matching section out of CHANGELOG.md so the GitHub Release body
+      # is the actual release notes (not a static placeholder). Runs on every
+      # OS runner; `shell: bash` is available on Windows runners too.
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          {
+            echo 'body<<CHANGELOG_EOF'
+            node .github/scripts/changelog.mjs "$VERSION"
+            echo 'CHANGELOG_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -74,7 +88,7 @@ jobs:
         with:
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'app-v__VERSION__' }}
           releaseName: 'Infinity Loop ${{ github.ref_name }}'
-          releaseBody: 'See CHANGELOG.md for release notes.'
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
