@@ -6,7 +6,7 @@
 
 [package]
 name        = "rust-hole"
-version     = "1.0.0"
+version     = "1.1.0"
 description = "Infinity Loop — AI knowledge explorer"
 authors     = ["Ar3love"]
 edition     = "2021"   # Rust 2021 edition — modern, recommended default
