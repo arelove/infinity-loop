@@ -17,7 +17,7 @@
     DEFAULT_IGNORE_PATTERNS, shouldIgnore,
   } from '$lib/devTypes';
   import { generateId } from '$lib/SessionStore';
-  import { getGeminiKey } from '$lib/api';
+  import { analyzePdf } from '$lib/api';
   import { invoke } from '@tauri-apps/api/core';
   import { showSnackbar } from '$lib/components/Snackbar.svelte';
   import { translate } from '$lib/i18n'; // ← ДОБАВЛЕНО
@@ -397,51 +397,21 @@
     for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
     const base64 = btoa(binary);
 
-    const geminiKey = await getGeminiKey();
-    if (!geminiKey) throw new Error('No Gemini key set');
-
     processingMsg = 'Gemini is analysing structure…';
-    const resp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            role: 'user',
-            parts: [
-              // PDF напрямую — Gemini сам читает
-              {
-                inline_data: {
-                  mime_type: 'application/pdf',
-                  data: base64,
-                }
-              },
-              { text:
+    // PDF understanding is Gemini-native, so this always runs through the
+    // Gemini key in Rust regardless of the active chat provider.
+    const raw = (await analyzePdf(
+      base64,
 `Split this document into 5–12 logical semantic sections (chapters, topics, etc).
 Return ONLY a valid JSON array, nothing else:
 [{"title": "Section title", "content": "Section summary in 2-3 sentences"}]
 Rules:
 - No markdown fences
-- No preamble or explanation  
+- No preamble or explanation
 - Content must be plain text, no quotes or special characters that break JSON
 - Each content max 300 characters`
-              }
-            ]
-          }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 8192 },
-        }),
-      }
-    );
+    )) || '[]';
 
-    if (!resp.ok) {
-      const err = await resp.text();
-      throw new Error(`Gemini ${resp.status}: ${err.slice(0, 200)}`);
-    }
-
-    const data = await resp.json();
-    const raw  = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? '[]';
-    
     // Безопасный парсинг
     let clean = raw.trim();
     // Вырезаем markdown если Gemini всё же добавил

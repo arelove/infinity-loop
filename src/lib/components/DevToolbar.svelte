@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { getGeminiKey } from '$lib/api';
-  import { showSnackbar } from '$lib/components/Snackbar.svelte';
+  import { llmComplete } from '$lib/api';
 
   interface Props {
     projectName: string;
@@ -25,23 +24,9 @@
     if (!projectQuestion.trim()) return;
     isAsking = true; projectAnswer = '';
     try {
-      const key = await getGeminiKey();
-      if (!key) { showSnackbar('Add Gemini key in Settings', 'error'); return; }
-      const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text:
-              `You are a software architect. Answer this high-level question about the project "${projectName}":\n${projectQuestion}\nBe concise and insightful.`
-            }] }],
-            generationConfig: { temperature: 0.5, maxOutputTokens: 512 },
-          }),
-        }
-      );
-      const json = await resp.json();
-      projectAnswer = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? 'No response';
+      const prompt =
+        `You are a software architect. Answer this high-level question about the project "${projectName}":\n${projectQuestion}\nBe concise and insightful.`;
+      projectAnswer = (await llmComplete(prompt, { temperature: 0.5, max_tokens: 512 })) || 'No response';
     } catch (e) { projectAnswer = `Error: ${e}`; }
     finally { isAsking = false; }
   }

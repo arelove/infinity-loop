@@ -1,8 +1,7 @@
 <script lang="ts">
   import { Handle, Position } from '@xyflow/svelte';
   import type { DevNodeData } from '$lib/devTypes';
-  import { getGeminiKey } from '$lib/api';
-  import { showSnackbar } from '$lib/components/Snackbar.svelte';
+  import { llmComplete } from '$lib/api';
   import { createEventDispatcher } from 'svelte';
 
   interface Props { id: string; data: DevNodeData; }
@@ -19,26 +18,12 @@
     if (!aiQuestion.trim()) return;
     isAsking = true; aiAnswer = '';
     try {
-      const key = await getGeminiKey();
-      if (!key) { showSnackbar('Add your Gemini key in Settings', 'error'); return; }
-      const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text:
-              `You are a senior software architect. Answer about the module/folder: "${data.title}".
+      const prompt =
+        `You are a senior software architect. Answer about the module/folder: "${data.title}".
 Path: ${data.path || 'root'}
 Question: ${aiQuestion}
-Be concise and helpful.`
-            }] }],
-            generationConfig: { temperature: 0.4, maxOutputTokens: 512 },
-          }),
-        }
-      );
-      const json = await resp.json();
-      aiAnswer = json?.candidates?.[0]?.content?.parts?.[0]?.text ?? 'No response';
+Be concise and helpful.`;
+      aiAnswer = (await llmComplete(prompt, { temperature: 0.4, max_tokens: 512 })) || 'No response';
     } catch (e) { aiAnswer = `Error: ${e}`; }
     finally { isAsking = false; }
   }
