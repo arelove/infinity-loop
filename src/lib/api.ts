@@ -1,32 +1,125 @@
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, Channel } from '@tauri-apps/api/core';
 import type { SearchRequest, SearchResponse, Source, ImageResult } from './types';
-import { getLocale, translate } from './i18n';
+import { translate } from './i18n';
 
-// ── Tauri key commands ────────────────────────────────────────────────────────
+// ── Providers ─────────────────────────────────────────────────────────────────
 
-export async function saveApiKeys(tavilyKey: string, geminiKey: string): Promise<void> {
-  return invoke('save_api_keys', { tavilyKey, geminiKey });
+export type ProviderId = 'gemini' | 'openai' | 'xai' | 'nvidia' | 'ollama';
+
+/** Config as exposed to the frontend — raw keys never leave Rust. */
+export interface ConfigView {
+  provider: ProviderId;
+  model: string;
+  ollama_base_url: string;
+  has_tavily: boolean;
+  has_gemini: boolean;
+  has_openai: boolean;
+  has_xai: boolean;
+  has_nvidia: boolean;
 }
 
-export async function saveTavilyKey(tavilyKey: string): Promise<void> {
-  return invoke('save_tavily_key', { tavilyKey });
+/** Partial update — omit / leave key fields blank to keep the stored value. */
+export interface ConfigUpdate {
+  provider?: ProviderId;
+  model?: string;
+  ollama_base_url?: string;
+  tavily_key?: string;
+  gemini_key?: string;
+  openai_key?: string;
+  xai_key?: string;
+  nvidia_key?: string;
 }
 
-export async function saveGeminiKey(geminiKey: string): Promise<void> {
-  return invoke('save_gemini_key', { geminiKey });
+/** UI metadata for each provider: label, default model, and suggestions. */
+export const PROVIDERS: Record<
+  ProviderId,
+  { label: string; keyField: keyof ConfigUpdate | null; defaultModel: string; models: string[]; keysUrl?: string }
+> = {
+  gemini: {
+    label: 'Google Gemini',
+    keyField: 'gemini_key',
+    defaultModel: 'gemini-2.5-flash',
+    models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash'],
+    keysUrl: 'https://aistudio.google.com/apikey',
+  },
+  openai: {
+    label: 'OpenAI (ChatGPT)',
+    keyField: 'openai_key',
+    defaultModel: 'gpt-4o-mini',
+    models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'o4-mini'],
+    keysUrl: 'https://platform.openai.com/api-keys',
+  },
+  xai: {
+    label: 'xAI (Grok)',
+    keyField: 'xai_key',
+    defaultModel: 'grok-2-latest',
+    models: ['grok-2-latest', 'grok-2-vision-latest', 'grok-beta'],
+    keysUrl: 'https://console.x.ai',
+  },
+  nvidia: {
+    label: 'NVIDIA NIM',
+    keyField: 'nvidia_key',
+    defaultModel: 'meta/llama-3.3-70b-instruct',
+    models: [
+      'meta/llama-3.3-70b-instruct',
+      'meta/llama-3.1-405b-instruct',
+      'nvidia/llama-3.1-nemotron-70b-instruct',
+      'deepseek-ai/deepseek-r1',
+    ],
+    keysUrl: 'https://build.nvidia.com',
+  },
+  ollama: {
+    label: 'Local (Ollama)',
+    keyField: null, // no key — local server
+    defaultModel: 'llama3.1',
+    models: ['llama3.1', 'qwen2.5', 'mistral', 'phi3'],
+  },
+};
+
+export async function getConfig(): Promise<ConfigView> {
+  return invoke<ConfigView>('get_config');
 }
 
-export async function getGeminiKey(): Promise<string> {
-  return invoke<string>('get_gemini_key');
+export async function setConfig(update: ConfigUpdate): Promise<void> {
+  return invoke('set_config', { update });
 }
 
-export async function getApiKeysStatus(): Promise<{ has_tavily: boolean; has_gemini: boolean }> {
-  return invoke('get_api_keys_status');
+/** True when the active provider has everything it needs to run. */
+export function providerReady(cfg: ConfigView): boolean {
+  switch (cfg.provider) {
+    case 'gemini':  return cfg.has_gemini;
+    case 'openai':  return cfg.has_openai;
+    case 'xai':     return cfg.has_xai;
+    case 'nvidia':  return cfg.has_nvidia;
+    case 'ollama':  return true; // local server, no key required
+    default:        return false;
+  }
 }
 
-// ── Parse Gemini response ─────────────────────────────────────────────────────
+// ── One-shot completion (Dev-mode helpers) ────────────────────────────────────
 
-function parseGeminiResponse(rawText: string): { main: string; questions: string[] } {
+export async function llmComplete(
+  user: string,
+  opts: { system?: string; temperature?: number; max_tokens?: number } = {},
+): Promise<string> {
+  return invoke<string>('llm_complete', {
+    req: {
+      user,
+      system: opts.system,
+      temperature: opts.temperature ?? 0.4,
+      max_tokens: opts.max_tokens ?? 1024,
+    },
+  });
+}
+
+/** PDF structural split — always routed through Gemini (native PDF reading). */
+export async function analyzePdf(base64: string, prompt: string): Promise<string> {
+  return invoke<string>('gemini_analyze_pdf', { base64, prompt });
+}
+
+// ── Parse LLM response ────────────────────────────────────────────────────────
+
+function parseLlmResponse(rawText: string): { main: string; questions: string[] } {
   const separators = [
     'Follow-up Questions:',
     'Follow-Up Questions:',
@@ -36,7 +129,7 @@ function parseGeminiResponse(rawText: string): { main: string; questions: string
     '**Follow-Up Questions:**',
     '## Follow',
     '#### Follow',
-    // Russian variants (when locale=ru and Gemini responds in Russian)
+    // Russian variants (when locale=ru and the model responds in Russian)
     'Дополнительные вопросы:',
     'Уточняющие вопросы:',
     'Вопросы для размышления:',
@@ -69,17 +162,14 @@ function parseGeminiResponse(rawText: string): { main: string; questions: string
   return { main: mainPart, questions };
 }
 
-// ── Main search (Gemini SSE streaming) ───────────────────────────────────────
+// ── Main search (Tavily + streaming completion, all via Rust) ─────────────────
 
 export async function searchRabbithole(
   request: SearchRequest,
   onChunk?: (accumulated: string) => void,
-  signal?: AbortSignal,
+  requestId?: string,
 ): Promise<SearchResponse> {
-  const geminiKey = await getGeminiKey();
-  if (!geminiKey) throw new Error(translate('hint_no_keys'));
-
-  // Tavily via Rust
+  // Tavily via Rust (key stays in the backend)
   const tavily = await invoke<{
     sources: Source[];
     images: ImageResult[];
@@ -100,7 +190,7 @@ export async function searchRabbithole(
   const concept = request.concept ?? request.query;
 
   // Prompts are always written in English for clarity and model reliability.
-  // The langInstruction at the end tells Gemini which language to reply in.
+  // The langInstruction at the end tells the model which language to reply in.
   const systemPrompt = [
     `You are an AI assistant that helps users explore topics in depth.`,
     ``,
@@ -127,54 +217,30 @@ export async function searchRabbithole(
     langInstruction ? langInstruction : '',
   ].filter(Boolean).join('\n\n');
 
-  // Stream via SSE
-  const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?key=${geminiKey}&alt=sse`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal,
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: userMsg }] }],
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
-      }),
-    }
-  );
+  // Stream via Rust → provider. Deltas arrive on the Channel; we accumulate
+  // and forward the running total to the caller (keeps the existing UI contract).
+  const channel = new Channel<string>();
+  let accumulated = '';
+  channel.onmessage = (delta) => {
+    accumulated += delta;
+    onChunk?.(accumulated);
+  };
 
-  if (!resp.ok) {
-    const err = await resp.text();
-    throw new Error(`Gemini HTTP ${resp.status}: ${err.slice(0, 300)}`);
-  }
-  if (!resp.body) throw new Error('Gemini returned no response body');
+  const full = await invoke<string>('llm_stream', {
+    req: {
+      system: systemPrompt,
+      user: userMsg,
+      temperature: 0.7,
+      max_tokens: 2048,
+    },
+    onChunk: channel,
+    requestId: requestId ?? crypto.randomUUID(),
+  });
 
-  const reader  = resp.body.getReader();
-  const decoder = new TextDecoder();
-  let full   = '';
-  let buffer = '';
+  const text = full || accumulated;
+  if (!text) throw new Error('The model returned an empty response');
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    const lines = buffer.split('\n');
-    buffer = lines.pop() ?? '';
-
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const raw = line.slice(6).trim();
-      if (!raw || raw === '[DONE]') continue;
-      try {
-        const chunk: string = JSON.parse(raw)?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-        if (chunk) { full += chunk; onChunk?.(full); }
-      } catch { /* malformed chunk */ }
-    }
-  }
-
-  if (!full) throw new Error('Gemini returned empty response');
-
-  const { main, questions } = parseGeminiResponse(full);
+  const { main, questions } = parseLlmResponse(text);
 
   // Fallback questions — localised via i18n
   const fallback = [
@@ -190,4 +256,9 @@ export async function searchRabbithole(
     sources:          tavily.sources,
     images:           tavily.images,
   };
+}
+
+/** Ask Rust to stop an in-flight `searchRabbithole` stream by its request id. */
+export async function cancelStream(requestId: string): Promise<void> {
+  try { await invoke('cancel_stream', { requestId }); } catch { /* best effort */ }
 }

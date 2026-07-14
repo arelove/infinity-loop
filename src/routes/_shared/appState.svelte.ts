@@ -10,7 +10,7 @@ import { writable } from 'svelte/store';
 import dagre from '@dagrejs/dagre';
 import type { Node, Edge } from '@xyflow/svelte';
 import type { DevSession } from '$lib/devTypes';
-import { searchRabbithole } from '$lib/api';
+import { searchRabbithole, cancelStream } from '$lib/api';
 import { translate } from '$lib/i18n';
 import {
   saveSession, inlineNodeImages, generateThumbnail,
@@ -44,7 +44,9 @@ export const edgesStore  = writable<Edge[]>([]);
 
 // ── Внутренние переменные ─────────────────────────────────────────────────────
 
-export let currentController: AbortController | null = null;
+// Id of the in-flight request. Streaming is cancelled in Rust via cancelStream,
+// and stale callbacks are ignored by comparing against this id.
+export let currentRequestId: string | null = null;
 const MAX_HISTORY = 6;
 
 // ── Deck ──────────────────────────────────────────────────────────────────────
@@ -138,17 +140,20 @@ export async function handleSearch() {
   const q = app.query.trim();
   if (!q || app.isLoading) return;
   app.isLoading = true; app.showSearch = false;
-  currentController?.abort(); currentController = new AbortController();
+  const myId = crypto.randomUUID();
+  if (currentRequestId) cancelStream(currentRequestId);
+  currentRequestId = myId;
   nodesStore.set([makeMain('main', { label: q, content: 'Loading...', images: [], sources: [], isExpanded: true })]);
   edgesStore.set([]);
   try {
     const result = await searchRabbithole(
       { query: q, previous_conversation: app.conversationHistory, concept: app.currentConcept, follow_up_mode: 'expansive' },
-      (chunk) => nodesStore.update(ns => ns.map(n =>
+      (chunk) => { if (currentRequestId !== myId) return; nodesStore.update(ns => ns.map(n =>
         n.id === 'main' ? makeMain('main', { ...(n.data as unknown as MainNodeData), content: chunk, isStreaming: true }) : n
-      )),
-      currentController.signal,
+      )); },
+      myId,
     );
+    if (currentRequestId !== myId) return; // superseded by a newer request
     app.currentConcept = result.contextual_query || q;
     const mainNode = makeMain('main', {
       label: result.contextual_query || q, content: result.response,
@@ -161,10 +166,10 @@ export async function handleSearch() {
     nodesStore.set(laid); edgesStore.set(laidE);
     showSnackbar(translate('hint_click_node'), 'info', 6000);
   } catch (e) {
-    if ((e as Error).name === 'AbortError') return;
+    if (currentRequestId !== myId) return; // superseded / cancelled
     showSnackbar(`${translate('error_search_failed')}: ${e}`, 'error');
     app.showSearch = true;
-  } finally { app.isLoading = false; }
+  } finally { if (currentRequestId === myId) app.isLoading = false; }
 }
 
 // ── Expand node ───────────────────────────────────────────────────────────────
@@ -195,16 +200,19 @@ export async function expandNode(node: Node) {
   nodesStore.update(ns => ns.map(n =>
     n.id === id ? makeMain(id, { label, content: 'Loading...', isExpanded: true }) : n
   ));
-  currentController?.abort(); currentController = new AbortController();
+  const myId = crypto.randomUUID();
+  if (currentRequestId) cancelStream(currentRequestId);
+  currentRequestId = myId;
 
   try {
     const result = await searchRabbithole(
       { query: label, previous_conversation: app.conversationHistory, concept: app.currentConcept, follow_up_mode: 'expansive' },
-      (chunk) => nodesStore.update(ns => ns.map(n =>
+      (chunk) => { if (currentRequestId !== myId) return; nodesStore.update(ns => ns.map(n =>
         n.id === id ? makeMain(id, { ...(n.data as unknown as MainNodeData), content: chunk, isStreaming: true }) : n
-      )),
-      currentController.signal,
+      )); },
+      myId,
     );
+    if (currentRequestId !== myId) return; // superseded by a newer request
     const ts = Date.now();
     const qNodes = result.follow_up_questions.map((txt, i) => makeQ(`q-${id}-${i}-${ts}`, txt));
 
@@ -224,19 +232,20 @@ export async function expandNode(node: Node) {
       edgesStore.set(laidE); return laid;
     });
   } catch (e) {
-    if ((e as Error).name === 'AbortError') return;
+    if (currentRequestId !== myId) return; // superseded / cancelled
     showSnackbar(`${translate('error_expand_failed')}: ${e}`, 'error');
   } finally {
     const { [id]: _, ...rest } = app.activeRequests;
     app.activeRequests = rest;
-    app.isLoading = false;
+    if (currentRequestId === myId) app.isLoading = false;
   }
 }
 
 // ── Reset ─────────────────────────────────────────────────────────────────────
 
 export function resetToSearch() {
-  currentController?.abort(); currentController = null;
+  if (currentRequestId) cancelStream(currentRequestId);
+  currentRequestId = null;
   app.showSearch = true; app.isLoading = false;
   app.activeRequests = {}; nodesStore.set([]); edgesStore.set([]);
   app.conversationHistory = []; app.currentConcept = ''; app.query = '';
