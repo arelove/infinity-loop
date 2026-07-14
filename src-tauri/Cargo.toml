@@ -37,9 +37,13 @@ tauri-plugin-opener = "2"
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# Async HTTP client — communicates with Tavily & Gemini APIs
-# The "json" feature enables .json() body helpers
-reqwest = { version = "0.12", features = ["json"] }
+# Async HTTP client — communicates with Tavily & every LLM provider
+# "json"   — .json() body helpers
+# "stream" — .bytes_stream() for SSE streaming completions
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# Stream combinators (StreamExt::next) used to consume the SSE byte stream
+futures-util = "0.3"
 
 # Async runtime — "full" enables all features (io, time, sync, macros…)
 # Required by both Tauri and reqwest
